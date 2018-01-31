@@ -1,0 +1,47 @@
+```{r, message=FALSE}
+library(tidyverse)
+
+# created with head -n 10 GSE72056_melanoma_single_cell_revised_v2.txt > GSE-short.txt
+all <- read_delim("GSE-short.txt", delim = "\t")
+```
+
+First, separate out the two different kinds of data - the first three rows are cell metadata, the remaining rows are gene reads.
+
+```{r}
+properties_wide <- all[1:3, ]
+gene_reads_wide <- all[4:nrow(all), ]
+```
+
+The gene reads are a straightforward pivot-table-like count matrix. This means that we can apply standard transformation from wide to long via `gather`. `-Cell` means that the transformation is applied to all columns except the one that's called `Cell`:
+
+```{r}
+# gather(gene_reads, key = "cell_id", value = "reads", -Cell)
+gene_reads <- gather(gene_reads_wide, cell_id, reads, -Cell) %>% 
+  rename(gene = Cell)
+```
+
+The properties table, on the other hand, is only transposed, so we'll want to transpose it back:
+
+```{r}
+properties <- t(properties_wide) %>% as.data.frame() %>% tibble::rownames_to_column() %>%
+  rename(cell_id = rowname, tumor_id = V1, malignant = V2, cell_type = V3)
+properties <- properties[-1, ] # skip the annotation
+```
+
+Lastly, we'd want to relabel some misleading values in the dataset -- for instance, `FALSE` really should correspond to 0:
+
+```{r}
+properties$malignant <- as.integer(as.character(properties$malignant))
+properties$malignant[properties$malignant == 0] <- NA
+properties$malignant[properties$malignant == 1] <- TRUE
+properties$malignant[properties$malignant == 2] <- FALSE
+head(properties)
+```
+
+And now that we've divided the data-tables, we can effectively filter out results:
+
+```{r}
+properties %>% filter(tumor_id == 81) %>% left_join(gene_reads, by = "cell_id") %>% head()
+```
+
+
